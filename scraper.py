@@ -223,10 +223,38 @@ def fetch_activities(
     return activities
 
 
+def format_time(time_str: str) -> str:
+    """Format a time string for display."""
+    if not time_str:
+        return "?"
+    # If it's already in HH:MM format, return as-is
+    if len(time_str) <= 5 and ":" in time_str:
+        return time_str
+    # If it's an ISO datetime, extract just the time
+    try:
+        dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+        return dt.strftime("%I:%M %p").lstrip("0")
+    except (ValueError, AttributeError):
+        return time_str
+
+
+def format_date(date_str: str) -> str:
+    """Format a date string for display."""
+    if not date_str:
+        return "?"
+    try:
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        return dt.strftime("%a %b %d")  # e.g., "Thu Jan 30"
+    except (ValueError, AttributeError):
+        return date_str
+
+
 def parse_activity(activity: dict) -> dict:
     """Parse a raw activity into a cleaner format."""
     result = {
         "id": activity["_id"],
+        "league_id": activity.get("league_id"),
+        "game_id": activity.get("game_id"),
         "type": None,
         "sport": None,
         "name": None,
@@ -239,6 +267,7 @@ def parse_activity(activity: dict) -> dict:
         "spots_available": None,
         "max_spots": None,
         "registrants": None,
+        "url": None,
     }
 
     # Handle league-based activities (PICKUP, PRACTICE, CLINIC)
@@ -247,6 +276,7 @@ def parse_activity(activity: dict) -> dict:
         result["type"] = league.get("program_type")
         result["name"] = league.get("display_name") or league.get("name")
         result["sport"] = league.get("sportBySport", {}).get("name")
+        result["url"] = f"https://www.volosports.com/l/{activity.get('league_id')}"
 
         if league.get("venueByVenue"):
             result["venue"] = league["venueByVenue"].get("shorthand_name")
@@ -263,14 +293,18 @@ def parse_activity(activity: dict) -> dict:
         if league.get("registrants_aggregate"):
             result["registrants"] = league["registrants_aggregate"]["aggregate"]["count"]
 
-    # Handle game-based activities (drop-ins for existing leagues)
+    # Handle game-based activities (drop-ins for existing league games)
     elif activity.get("game"):
         game = activity["game"]
-        result["type"] = "DROPIN"
+        result["type"] = "DROP-IN"
+        result["url"] = f"https://www.volosports.com/d/{activity.get('game_id')}"
 
         if game.get("leagueByLeague"):
-            result["sport"] = game["leagueByLeague"].get("sportBySport", {}).get("name")
-            result["type"] = game["leagueByLeague"].get("program_type", "DROPIN")
+            league = game["leagueByLeague"]
+            result["sport"] = league.get("sportBySport", {}).get("name")
+            # Build a descriptive name for drop-in games
+            sport_name = result["sport"] or "Activity"
+            result["name"] = f"{sport_name} Drop-In Game"
 
         if game.get("venueByVenue"):
             venue = game["venueByVenue"]
@@ -282,7 +316,7 @@ def parse_activity(activity: dict) -> dict:
         if game.get("drop_in_capacity"):
             result["spots_available"] = game["drop_in_capacity"].get("total_available_spots")
 
-        # Use game times if available
+        # Use game times if available (they're in ISO format)
         if game.get("start_time"):
             result["start_time"] = game["start_time"]
         if game.get("end_time"):
@@ -296,14 +330,21 @@ def print_activity(activity: dict) -> None:
     spots = activity.get("spots_available")
     spots_str = f"{spots} spots" if spots is not None else "? spots"
 
+    date_str = format_date(activity["date"])
+    start_str = format_time(activity["start_time"])
+    end_str = format_time(activity["end_time"])
+
     print(f"\n{'='*60}")
     print(f"[{activity['type']}] {activity['sport']}: {activity['name']}")
-    print(f"  Date: {activity['date']} @ {activity['start_time']} - {activity['end_time']}")
-    print(f"  Venue: {activity['venue']}")
+    print(f"  When: {date_str} @ {start_str} - {end_str}")
+    print(f"  Where: {activity['venue']}", end="")
     if activity['neighborhood']:
-        print(f"  Neighborhood: {activity['neighborhood']}")
-    print(f"  Available: {spots_str}")
-    print(f"  ID: {activity['id']}")
+        print(f" ({activity['neighborhood']})")
+    else:
+        print()
+    print(f"  Spots: {spots_str}")
+    if activity.get("url"):
+        print(f"  Link: {activity['url']}")
 
 
 def main():
