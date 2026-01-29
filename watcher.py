@@ -8,6 +8,9 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from scraper import fetch_activities, parse_activity, format_date, format_time
 from discord import notify_new_activities
 
