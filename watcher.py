@@ -14,6 +14,29 @@ load_dotenv()
 from scraper import fetch_activities, parse_activity, format_date, format_time
 from discord import notify_new_activities
 
+
+def should_notify(activity: dict) -> bool:
+    """Check if we should notify for this activity.
+
+    - PICKUP activities: always notify (anyone can join)
+    - DROP-IN activities: only notify if not women-only
+    """
+    activity_type = (activity.get("type") or "").upper()
+    name = (activity.get("name") or "").lower()
+
+    # Pickups are open to everyone
+    if activity_type == "PICKUP":
+        return True
+
+    # For drop-ins, filter out women-only
+    if activity_type in ("DROP-IN", "DROPIN"):
+        # Check if it's women-only
+        if "women" in name or "woman" in name:
+            return False
+
+    # Default: notify for everything else (PRACTICE, CLINIC, etc.)
+    return True
+
 # Configuration
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", 300))  # 5 minutes default
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
@@ -169,13 +192,22 @@ def run_watcher():
             if new_activities:
                 print(f"\n>>> {len(new_activities)} NEW ACTIVITIES FOUND! <<<\n")
 
-                if DISCORD_WEBHOOK_URL:
-                    success = notify_new_activities(DISCORD_WEBHOOK_URL, new_activities)
+                # Filter to only activities where men can join
+                notifiable = [a for a in new_activities if should_notify(a)]
+                skipped = len(new_activities) - len(notifiable)
+                if skipped:
+                    print(f"  (Skipping {skipped} women-only drop-ins)")
+
+                if DISCORD_WEBHOOK_URL and notifiable:
+                    success = notify_new_activities(DISCORD_WEBHOOK_URL, notifiable)
                     if success:
                         mark_notified(conn, [a["id"] for a in new_activities])
                         print("Discord notification sent!")
                     else:
                         print("Failed to send Discord notification.")
+                elif not notifiable:
+                    mark_notified(conn, [a["id"] for a in new_activities])
+                    print("  No notifiable activities (all were women-only drop-ins).")
             else:
                 print("  No new activities.")
 

@@ -6,6 +6,9 @@ Fetches volleyball and soccer pickups/drop-ins from Volo Sports GraphQL API
 import httpx
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
 API_URL = "https://volosports.com/hapi/v1/graphql"
 
@@ -224,27 +227,29 @@ def fetch_activities(
 
 
 def format_time(time_str: str) -> str:
-    """Format a time string for display."""
+    """Format a time string for display in Pacific time."""
     if not time_str:
         return "?"
     # If it's already in HH:MM format, return as-is
     if len(time_str) <= 5 and ":" in time_str:
         return time_str
-    # If it's an ISO datetime, extract just the time
+    # If it's an ISO datetime, convert to Pacific and extract just the time
     try:
         dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-        return dt.strftime("%I:%M %p").lstrip("0")
+        dt_pacific = dt.astimezone(PACIFIC_TZ)
+        return dt_pacific.strftime("%I:%M %p").lstrip("0")
     except (ValueError, AttributeError):
         return time_str
 
 
 def format_date(date_str: str) -> str:
-    """Format a date string for display."""
+    """Format a date string for display in Pacific time."""
     if not date_str:
         return "?"
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        return dt.strftime("%a %b %d")  # e.g., "Thu Jan 30"
+        dt_pacific = dt.astimezone(PACIFIC_TZ)
+        return dt_pacific.strftime("%a %b %d")  # e.g., "Thu Jan 30"
     except (ValueError, AttributeError):
         return date_str
 
