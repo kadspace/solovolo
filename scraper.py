@@ -47,6 +47,7 @@ query DiscoverDaily($where: discover_daily_bool_exp!, $limit: Int = 100, $offset
       drop_in_capacity {
         _id
         total_available_spots
+        total_male_eligible_spots
         __typename
       }
       leagueByLeague {
@@ -320,6 +321,7 @@ def parse_activity(activity: dict) -> dict:
 
         if game.get("drop_in_capacity"):
             result["spots_available"] = game["drop_in_capacity"].get("total_available_spots")
+            result["male_eligible_spots"] = game["drop_in_capacity"].get("total_male_eligible_spots")
 
         # Use game times if available (they're in ISO format)
         if game.get("start_time"):

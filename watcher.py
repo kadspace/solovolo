@@ -19,20 +19,22 @@ def should_notify(activity: dict) -> bool:
     """Check if we should notify for this activity.
 
     - PICKUP activities: always notify (anyone can join)
-    - DROP-IN activities: only notify if not women-only
+    - DROP-IN activities: only notify if there are male-eligible spots
     """
     activity_type = (activity.get("type") or "").upper()
-    name = (activity.get("name") or "").lower()
 
     # Pickups are open to everyone
     if activity_type == "PICKUP":
         return True
 
-    # For drop-ins, filter out women-only
+    # For drop-ins, only notify if there are spots men can apply for
     if activity_type in ("DROP-IN", "DROPIN"):
-        # Check if it's women-only
-        if "women" in name or "woman" in name:
-            return False
+        male_eligible = activity.get("male_eligible_spots")
+        # If we have the data, only notify if there are male-eligible spots
+        if male_eligible is not None:
+            return male_eligible > 0
+        # Fallback: if data missing, notify anyway (shouldn't happen)
+        return True
 
     # Default: notify for everything else (PRACTICE, CLINIC, etc.)
     return True
@@ -196,7 +198,7 @@ def run_watcher():
                 notifiable = [a for a in new_activities if should_notify(a)]
                 skipped = len(new_activities) - len(notifiable)
                 if skipped:
-                    print(f"  (Skipping {skipped} women-only drop-ins)")
+                    print(f"  (Skipped {skipped} drop-ins with no male-eligible spots)")
 
                 if DISCORD_WEBHOOK_URL and notifiable:
                     success = notify_new_activities(DISCORD_WEBHOOK_URL, notifiable)
@@ -207,7 +209,7 @@ def run_watcher():
                         print("Failed to send Discord notification.")
                 elif not notifiable:
                     mark_notified(conn, [a["id"] for a in new_activities])
-                    print("  No notifiable activities (all were women-only drop-ins).")
+                    print("  No notifiable activities (none had male-eligible spots).")
             else:
                 print("  No new activities.")
 
