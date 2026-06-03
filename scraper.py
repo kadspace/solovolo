@@ -1,6 +1,6 @@
 """
 Volo Sports San Diego - Pickup/Drop-in Scraper
-Fetches volleyball and soccer pickups/drop-ins from Volo Sports GraphQL API
+Fetches Volo pickups/drop-ins from the Volo Sports GraphQL API.
 """
 
 import httpx
@@ -356,11 +356,10 @@ def print_activity(activity: dict) -> None:
 
 def main():
     """Main entry point."""
-    print("Fetching San Diego Volleyball & Soccer pickups/drop-ins...")
+    print("Fetching San Diego pickups/drop-ins...")
     print("-" * 60)
 
-    # Fetch volleyball and soccer only
-    activities = fetch_activities(sports=["Volleyball", "Soccer"])
+    activities = fetch_activities()
 
     if not activities:
         print("No activities found!")
@@ -369,24 +368,17 @@ def main():
     # Parse and display
     parsed = [parse_activity(a) for a in activities]
 
-    # Group by sport
-    volleyball = [a for a in parsed if a["sport"] == "Volleyball"]
-    soccer = [a for a in parsed if a["sport"] == "Soccer"]
-
-    print(f"\n{'#'*60}")
-    print(f"# VOLLEYBALL ({len(volleyball)} activities)")
-    print(f"{'#'*60}")
-    for activity in volleyball:
-        print_activity(activity)
-
-    print(f"\n{'#'*60}")
-    print(f"# SOCCER ({len(soccer)} activities)")
-    print(f"{'#'*60}")
-    for activity in soccer:
-        print_activity(activity)
+    sports = sorted({a["sport"] or "Other" for a in parsed})
+    for sport in sports:
+        sport_activities = [a for a in parsed if (a["sport"] or "Other") == sport]
+        print(f"\n{'#'*60}")
+        print(f"# {sport.upper()} ({len(sport_activities)} activities)")
+        print(f"{'#'*60}")
+        for activity in sport_activities:
+            print_activity(activity)
 
     print(f"\n{'='*60}")
-    print(f"Total: {len(volleyball)} volleyball, {len(soccer)} soccer")
+    print(f"Total: {len(parsed)} activities")
 
 
 if __name__ == "__main__":

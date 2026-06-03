@@ -15,15 +15,48 @@ from scraper import fetch_activities, parse_activity, format_date, format_time
 from discord import notify_new_activities
 
 
+# Configuration
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", 300))  # 5 minutes default
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
+DB_PATH = Path(os.environ.get("DB_PATH", Path(__file__).parent / "volo.db"))
+WATCHED_SPORTS = [
+    sport.strip()
+    for sport in os.environ.get("WATCHED_SPORTS", "").split(",")
+    if sport.strip()
+]
+EXCLUDED_SPORTS = {
+    sport.strip().casefold()
+    for sport in os.environ.get("EXCLUDED_SPORTS", "Softball").split(",")
+    if sport.strip()
+}
+NOTIFY_ON_STARTUP = os.environ.get("NOTIFY_ON_STARTUP", "true").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+
+
 def should_notify(activity: dict) -> bool:
     """Check if we should notify for this activity.
 
+    - Excluded sports: never notify
     - PICKUP activities: always notify (anyone can join)
     - DROP-IN activities: only notify if there are male-eligible spots
     """
     activity_type = (activity.get("type") or "").upper()
+    name = (activity.get("name") or "").strip().casefold()
+    sport = (activity.get("sport") or "").strip().casefold()
 
-    # Pickups are open to everyone
+    if sport in EXCLUDED_SPORTS:
+        return False
+
+    # The API exposes male-eligible counts for drop-ins, but pickup names still
+    # carry women-only labels.
+    if "women" in name or "woman" in name:
+        return False
+
+    # Remaining pickups are treated as open to everyone.
     if activity_type == "PICKUP":
         return True
 
@@ -38,11 +71,6 @@ def should_notify(activity: dict) -> bool:
 
     # Default: notify for everything else (PRACTICE, CLINIC, etc.)
     return True
-
-# Configuration
-POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", 300))  # 5 minutes default
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
-DB_PATH = Path(__file__).parent / "volo.db"
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
@@ -74,10 +102,10 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def get_seen_ids(conn: sqlite3.Connection) -> set[str]:
-    """Get all previously seen activity IDs."""
-    cursor = conn.execute("SELECT id FROM seen_activities")
-    return {row[0] for row in cursor.fetchall()}
+def get_seen_statuses(conn: sqlite3.Connection) -> dict[str, int]:
+    """Get previously seen activity IDs and whether they were notified."""
+    cursor = conn.execute("SELECT id, notified FROM seen_activities")
+    return {row[0]: row[1] or 0 for row in cursor.fetchall()}
 
 
 def save_activity(conn: sqlite3.Connection, activity: dict, is_new: bool = True) -> None:
@@ -116,23 +144,25 @@ def save_activity(conn: sqlite3.Connection, activity: dict, is_new: bool = True)
 
 def mark_notified(conn: sqlite3.Connection, activity_ids: list[str]) -> None:
     """Mark activities as notified."""
+    if not activity_ids:
+        return
     for aid in activity_ids:
         conn.execute("UPDATE seen_activities SET notified = 1 WHERE id = ?", (aid,))
     conn.commit()
 
 
 def check_for_new_activities(conn: sqlite3.Connection) -> list[dict]:
-    """Fetch activities and identify new ones."""
+    """Fetch activities and identify ones that need notifications."""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Checking for new activities...")
 
     try:
-        raw_activities = fetch_activities(sports=["Volleyball", "Soccer"])
+        raw_activities = fetch_activities(sports=WATCHED_SPORTS or None)
     except Exception as e:
         print(f"Error fetching activities: {e}")
         return []
 
-    seen_ids = get_seen_ids(conn)
-    new_activities = []
+    seen_statuses = get_seen_statuses(conn)
+    notification_candidates = []
 
     for raw in raw_activities:
         activity = parse_activity(raw)
@@ -142,15 +172,23 @@ def check_for_new_activities(conn: sqlite3.Connection) -> list[dict]:
         activity["start_time"] = format_time(activity["start_time"])
         activity["end_time"] = format_time(activity["end_time"])
 
-        if activity["id"] not in seen_ids:
-            new_activities.append(activity)
+        seen_notified = seen_statuses.get(activity["id"])
+        needs_notification = should_notify(activity)
+
+        if seen_notified is None:
             save_activity(conn, activity, is_new=True)
             print(f"  NEW: [{activity['type']}] {activity['sport']}: {activity['name']}")
             print(f"       {activity['date']} @ {activity['start_time']} - {activity['venue']}")
+            if needs_notification:
+                notification_candidates.append(activity)
         else:
             save_activity(conn, activity, is_new=False)
+            if seen_notified == 0 and needs_notification:
+                notification_candidates.append(activity)
+                print(f"  NOW NOTIFIABLE: [{activity['type']}] {activity['sport']}: {activity['name']}")
+                print(f"       {activity['date']} @ {activity['start_time']} - {activity['venue']}")
 
-    return new_activities
+    return notification_candidates
 
 
 def run_watcher():
@@ -161,6 +199,9 @@ def run_watcher():
     print(f"Poll interval: {POLL_INTERVAL} seconds")
     print(f"Discord webhook: {'configured' if DISCORD_WEBHOOK_URL else 'NOT CONFIGURED'}")
     print(f"Database: {DB_PATH}")
+    print(f"Sports: {', '.join(WATCHED_SPORTS) if WATCHED_SPORTS else 'all'}")
+    print(f"Excluded sports: {', '.join(sorted(EXCLUDED_SPORTS)) or 'none'}")
+    print(f"Notify on startup: {NOTIFY_ON_STARTUP}")
     print("=" * 60)
 
     if not DISCORD_WEBHOOK_URL:
@@ -174,13 +215,19 @@ def run_watcher():
     new_activities = check_for_new_activities(conn)
 
     if new_activities:
-        print(f"\nFound {len(new_activities)} activities on first run.")
-        if DISCORD_WEBHOOK_URL:
-            print("Skipping notifications for initial batch (assuming these are existing).")
-        # Mark all as notified to avoid spam on first run
-        mark_notified(conn, [a["id"] for a in new_activities])
+        print(f"\nFound {len(new_activities)} notifiable activities on first run.")
+        if DISCORD_WEBHOOK_URL and NOTIFY_ON_STARTUP:
+            success = notify_new_activities(DISCORD_WEBHOOK_URL, new_activities)
+            if success:
+                mark_notified(conn, [a["id"] for a in new_activities])
+                print("Startup Discord notification sent!")
+            else:
+                print("Failed to send startup Discord notification; will retry next poll.")
+        else:
+            mark_notified(conn, [a["id"] for a in new_activities])
+            print("Startup notifications skipped.")
     else:
-        print("No activities found.")
+        print("No notifiable activities found.")
 
     print(f"\nWatching for new activities (checking every {POLL_INTERVAL}s)...")
     print("Press Ctrl+C to stop.\n")
@@ -192,26 +239,19 @@ def run_watcher():
             new_activities = check_for_new_activities(conn)
 
             if new_activities:
-                print(f"\n>>> {len(new_activities)} NEW ACTIVITIES FOUND! <<<\n")
+                print(f"\n>>> {len(new_activities)} ACTIVITIES NEED NOTIFICATION! <<<\n")
 
-                # Filter to only activities where men can join
-                notifiable = [a for a in new_activities if should_notify(a)]
-                skipped = len(new_activities) - len(notifiable)
-                if skipped:
-                    print(f"  (Skipped {skipped} drop-ins with no male-eligible spots)")
-
-                if DISCORD_WEBHOOK_URL and notifiable:
-                    success = notify_new_activities(DISCORD_WEBHOOK_URL, notifiable)
+                if DISCORD_WEBHOOK_URL:
+                    success = notify_new_activities(DISCORD_WEBHOOK_URL, new_activities)
                     if success:
                         mark_notified(conn, [a["id"] for a in new_activities])
                         print("Discord notification sent!")
                     else:
-                        print("Failed to send Discord notification.")
-                elif not notifiable:
-                    mark_notified(conn, [a["id"] for a in new_activities])
-                    print("  No notifiable activities (none had male-eligible spots).")
+                        print("Failed to send Discord notification; will retry next poll.")
+                else:
+                    print("Discord webhook not configured; leaving activities pending.")
             else:
-                print("  No new activities.")
+                print("  No activities need notification.")
 
     except KeyboardInterrupt:
         print("\n\nStopping watcher...")

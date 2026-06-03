@@ -3,7 +3,27 @@ Discord webhook integration for Volo Sports notifications.
 """
 
 import httpx
+from collections import Counter
 from typing import Optional
+
+
+SPORT_EMOJI = {
+    "Basketball": "\U0001F3C0",
+    "Bowling": "\U0001F3B3",
+    "Cornhole": "\U0001F3AF",
+    "Dodgeball": "\U0001F3D0",
+    "Flag Football": "\U0001F3C8",
+    "Kickball": "\u26BD",
+    "Pickleball": "\U0001F3BE",
+    "Soccer": "\u26BD",
+    "Tennis": "\U0001F3BE",
+    "Volleyball": "\U0001F3D0",
+}
+
+
+def sport_emoji(sport: Optional[str]) -> str:
+    """Return a readable emoji for a sport name."""
+    return SPORT_EMOJI.get(sport or "", "\U0001F3C3")
 
 
 def send_discord_message(
@@ -39,19 +59,16 @@ def build_activity_embed(activity: dict, is_new: bool = True) -> dict:
     # Color: green for new, blue for update
     color = 0x00FF00 if is_new else 0x0099FF
 
-    # Sport emoji
-    sport_emoji = {
-        "Volleyball": "\U0001F3D0",
-        "Soccer": "\u26BD",
-    }.get(activity.get("sport"), "\U0001F3C3")
-
-    title = f"{sport_emoji} {activity.get('name', 'Activity')}"
+    title = f"{sport_emoji(activity.get('sport'))} {activity.get('name', 'Activity')}"
 
     # Build description
     spots = activity.get("spots_available")
     spots_str = f"{spots} spots available" if spots is not None else "Spots unknown"
 
     description = f"**{activity.get('type', 'ACTIVITY')}** - {spots_str}"
+    male_eligible = activity.get("male_eligible_spots")
+    if male_eligible is not None:
+        description += f" ({male_eligible} male-eligible)"
 
     fields = [
         {
@@ -84,29 +101,16 @@ def notify_new_activities(webhook_url: str, activities: list[dict]) -> bool:
     if not activities:
         return True
 
-    # Group by sport
-    volleyball = [a for a in activities if a.get("sport") == "Volleyball"]
-    soccer = [a for a in activities if a.get("sport") == "Soccer"]
-
-    embeds = []
-
-    # Add volleyball activities
-    for activity in volleyball[:5]:  # Discord limit: 10 embeds per message
-        embeds.append(build_activity_embed(activity))
-
-    # Add soccer activities
-    for activity in soccer[:5]:
-        embeds.append(build_activity_embed(activity))
-
-    if not embeds:
-        return True
+    # Discord limit: 10 embeds per message.
+    embeds = [build_activity_embed(activity) for activity in activities[:10]]
 
     # Build summary message
     summary = f"**{len(activities)} new activities found!**"
-    if volleyball:
-        summary += f"\n\U0001F3D0 {len(volleyball)} Volleyball"
-    if soccer:
-        summary += f"\n\u26BD {len(soccer)} Soccer"
+    sport_counts = Counter(a.get("sport") or "Other" for a in activities)
+    for sport, count in sorted(sport_counts.items()):
+        summary += f"\n{sport_emoji(sport)} {count} {sport}"
+    if len(activities) > len(embeds):
+        summary += f"\nShowing first {len(embeds)} details."
 
     return send_discord_message(
         webhook_url=webhook_url,
