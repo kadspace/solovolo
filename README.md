@@ -39,9 +39,10 @@ Optional environment variables:
 - `EXCLUDED_SPORTS`: comma-separated sports to suppress, default `Softball`.
 - `WATCHED_SPORTS`: comma-separated sports to check. Leave unset to check all sports.
 - `NOTIFY_ON_STARTUP`: set to `false` to skip startup notifications.
+- `SEND_STARTUP_STATUS`: set to `false` to skip the "online" ping on worker boot.
 - `DB_PATH`: override the SQLite path, useful if Railway has a mounted volume.
 
-For Railway, connect the repo and add the env vars. The `Procfile` starts the worker.
+For Railway, connect the repo and add the env vars. `railway.json` sets the start command to `python watcher.py`.
 
 ## Why
 
