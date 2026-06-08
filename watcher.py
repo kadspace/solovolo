@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from scraper import fetch_activities, parse_activity, format_date, format_time
-from discord import notify_new_activities
+from discord import notify_new_activities, send_discord_message
 
 
 # Configuration
@@ -30,6 +30,12 @@ EXCLUDED_SPORTS = {
     if sport.strip()
 }
 NOTIFY_ON_STARTUP = os.environ.get("NOTIFY_ON_STARTUP", "true").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+SEND_STARTUP_STATUS = os.environ.get("SEND_STARTUP_STATUS", "true").strip().lower() not in {
     "0",
     "false",
     "no",
@@ -202,11 +208,23 @@ def run_watcher():
     print(f"Sports: {', '.join(WATCHED_SPORTS) if WATCHED_SPORTS else 'all'}")
     print(f"Excluded sports: {', '.join(sorted(EXCLUDED_SPORTS)) or 'none'}")
     print(f"Notify on startup: {NOTIFY_ON_STARTUP}")
+    print(f"Startup status ping: {SEND_STARTUP_STATUS}")
     print("=" * 60)
 
     if not DISCORD_WEBHOOK_URL:
         print("\nWARNING: No Discord webhook URL configured!")
         print("Set DISCORD_WEBHOOK_URL environment variable to enable notifications.\n")
+    elif SEND_STARTUP_STATUS:
+        status = (
+            "**Volo watcher online.**"
+            f"\nSports: {', '.join(WATCHED_SPORTS) if WATCHED_SPORTS else 'all'}"
+            f"\nExcluded sports: {', '.join(sorted(EXCLUDED_SPORTS)) or 'none'}"
+            f"\nPoll interval: {POLL_INTERVAL}s"
+        )
+        if send_discord_message(DISCORD_WEBHOOK_URL, content=status):
+            print("Startup status ping sent!")
+        else:
+            print("Failed to send startup status ping.")
 
     conn = init_db(DB_PATH)
 
