@@ -31,7 +31,44 @@ Copy the URL and put it in your `.env` file.
 
 ## Hosting
 
-Works on Railway, Fly.io, or any server that can run Python. Set `DISCORD_WEBHOOK_URL` as an environment variable.
+The recommended free-tier deployment is Cloudflare Workers Cron + D1. This repo
+includes a Worker port in `src/worker.js`, D1 migrations in `migrations/`, and
+Wrangler config in `wrangler.toml`.
+
+Cloudflare quick start:
+
+1. Install Worker dependencies:
+   ```bash
+   npm install
+   ```
+2. Log in and create the D1 database:
+   ```bash
+   npx wrangler login
+   npx wrangler d1 create solovolo
+   ```
+3. Copy the generated D1 `database_id` into `wrangler.toml`.
+4. Apply the remote migration:
+   ```bash
+   npx wrangler d1 migrations apply solovolo --remote
+   ```
+5. Store your Discord webhook as a Worker secret:
+   ```bash
+   npx wrangler secret put DISCORD_WEBHOOK_URL
+   ```
+6. Deploy:
+   ```bash
+   npm run deploy
+   ```
+
+For local Cloudflare testing, create `.dev.vars` with `DISCORD_WEBHOOK_URL=...`,
+run `npm run dev`, then call:
+
+```bash
+curl "http://localhost:8787/__scheduled?cron=*/5+*+*+*+*"
+```
+
+The original Python worker still works on any server that can run Python. Set
+`DISCORD_WEBHOOK_URL` as an environment variable.
 
 Optional environment variables:
 
@@ -41,6 +78,10 @@ Optional environment variables:
 - `NOTIFY_ON_STARTUP`: set to `false` to skip startup notifications.
 - `SEND_STARTUP_STATUS`: set to `false` to skip the "online" ping on worker boot.
 - `DB_PATH`: override the SQLite path, useful if Railway has a mounted volume.
+
+Cloudflare ignores `POLL_INTERVAL`, `SEND_STARTUP_STATUS`, and `DB_PATH`.
+Schedule frequency comes from `wrangler.toml`, state is stored in D1, and there
+is no long-running process startup ping.
 
 For Railway, connect the repo and add the env vars. `railway.json` sets the start command to `python watcher.py`.
 
