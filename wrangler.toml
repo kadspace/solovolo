@@ -1,7 +1,7 @@
 name = "solovolo"
 main = "src/worker.js"
 compatibility_date = "2026-06-25"
-workers_dev = true
+workers_dev = false
 
 [triggers]
 crons = [ "*/5 * * * *" ]
@@ -22,5 +22,5 @@ VOLO_ORGANIZATION = "San Diego"
 [[d1_databases]]
 binding = "DB"
 database_name = "solovolo"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "aae69726-ce7e-4ae8-896a-33c55329dbf3"
 migrations_dir = "migrations"
