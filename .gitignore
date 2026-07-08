@@ -6,6 +6,9 @@ __pycache__/
 venv/
 env/
 .env
+.dev.vars
+node_modules/
+.wrangler/
 
 # Database
 *.db

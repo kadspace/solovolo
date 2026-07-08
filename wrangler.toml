@@ -1,0 +1,26 @@
+name = "solovolo"
+main = "src/worker.js"
+compatibility_date = "2026-06-25"
+workers_dev = false
+
+[triggers]
+crons = [ "*/5 * * * *" ]
+
+[observability]
+enabled = true
+
+[vars]
+EXCLUDED_SPORTS = "Softball"
+WATCHED_SPORTS = ""
+NOTIFY_ON_STARTUP = "true"
+VOLO_ORGANIZATION = "San Diego"
+
+# Set these as secrets, not plain vars:
+#   npx wrangler secret put DISCORD_WEBHOOK_URL
+#   npx wrangler secret put MANUAL_RUN_TOKEN
+
+[[d1_databases]]
+binding = "DB"
+database_name = "solovolo"
+database_id = "aae69726-ce7e-4ae8-896a-33c55329dbf3"
+migrations_dir = "migrations"
