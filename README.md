@@ -64,7 +64,7 @@ For local Cloudflare testing, create `.dev.vars` with `DISCORD_WEBHOOK_URL=...`,
 run `npm run dev`, then call:
 
 ```bash
-curl "http://localhost:8787/__scheduled?cron=*/5+*+*+*+*"
+curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"
 ```
 
 The original Python worker still works on any server that can run Python. Set
