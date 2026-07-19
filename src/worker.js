@@ -651,7 +651,7 @@ async function getHealth(env) {
   return {
     ok: true,
     service: "solovolo",
-    schedule: "*/5 * * * *",
+    schedule: "* * * * *",
     seenActivities: Number(seen?.count || 0),
     lastRun: lastRun || null,
   };
